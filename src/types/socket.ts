@@ -13,7 +13,8 @@ export interface ClientToServerEvents {
   }) => void;
   "client:next-round": (data: { roomCode: string }) => void;
   "client:leave-room": (data: { roomCode: string }) => void;
-  "client:request-sync": (data: { roomCode: string }) => void;
+  "client:request-sync": (data: { roomCode: string; playerId?: string }) => void;
+  "client:rejoin-room": (data: { roomCode: string; playerId: string }) => void;
 }
 
 export interface ServerToClientEvents {

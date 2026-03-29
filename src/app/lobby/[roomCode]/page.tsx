@@ -19,9 +19,20 @@ export default function LobbyPage() {
     if (storedId) setMyId(storedId);
 
     const timer = setTimeout(() => {
-      socket.emit("client:request-sync", { roomCode });
+      socket.emit("client:request-sync", { roomCode, playerId: storedId || undefined });
     }, 100);
-    return () => clearTimeout(timer);
+
+    const onReconnect = () => {
+      if (storedId) {
+        socket.emit("client:rejoin-room", { roomCode, playerId: storedId });
+      }
+    };
+    socket.on("connect", onReconnect);
+
+    return () => {
+      clearTimeout(timer);
+      socket.off("connect", onReconnect);
+    };
   }, [socket, roomCode]);
 
   useEffect(() => {

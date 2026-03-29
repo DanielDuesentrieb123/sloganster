@@ -44,10 +44,26 @@ export default function GamePage() {
       router.push("/");
       return;
     }
-    const timer = setTimeout(() => {
-      socket.emit("client:request-sync", { roomCode });
-    }, 100);
-    return () => clearTimeout(timer);
+
+    // Initial sync + rejoin
+    const doSync = () => {
+      socket.emit("client:request-sync", { roomCode, playerId: storedId });
+    };
+
+    // Sync on mount
+    const timer = setTimeout(doSync, 100);
+
+    // Auto-rejoin on reconnect
+    const onReconnect = () => {
+      console.log("[Socket] Reconnected, rejoining...");
+      socket.emit("client:rejoin-room", { roomCode, playerId: storedId! });
+    };
+    socket.on("connect", onReconnect);
+
+    return () => {
+      clearTimeout(timer);
+      socket.off("connect", onReconnect);
+    };
   }, [router, socket, roomCode]);
 
   useEffect(() => {

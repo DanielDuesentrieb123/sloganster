@@ -15,6 +15,9 @@ import { getRoom } from "./roomStore";
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
 const socketMap = new Map<string, { roomCode: string; playerId: string }>();
+// Grace period timers for disconnected players
+const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const DISCONNECT_GRACE_MS = 30_000;
 
 export function setupSocketHandlers(
   io: Server<ClientToServerEvents, ServerToClientEvents>
@@ -47,7 +50,6 @@ export function setupSocketHandlers(
         playerId: player.id,
       });
 
-      // Auto-start solo game
       const started = startGame(room.roomCode, player.id);
       if (!started) {
         socket.emit("server:error", {
@@ -62,7 +64,6 @@ export function setupSocketHandlers(
         player,
       });
 
-      // Start first round immediately
       const updatedRoom = startNextRound(room.roomCode);
       if (updatedRoom && updatedRoom.currentCard) {
         socket.emit("server:game-started", {
@@ -98,6 +99,48 @@ export function setupSocketHandlers(
       });
     });
 
+    // Rejoin after disconnect — reconnects an existing player
+    socket.on("client:rejoin-room", ({ roomCode, playerId }) => {
+      const room = getRoom(roomCode);
+      if (!room) return;
+
+      const player = room.players.find((p) => p.id === playerId);
+      if (!player) return;
+
+      // Cancel any pending disconnect timer
+      const timerKey = `${roomCode}:${playerId}`;
+      const timer = disconnectTimers.get(timerKey);
+      if (timer) {
+        clearTimeout(timer);
+        disconnectTimers.delete(timerKey);
+        console.log(`[Socket] Cancelled disconnect timer for ${player.name}`);
+      }
+
+      // Mark player as connected again
+      player.connected = true;
+
+      // Re-map socket and join room
+      socket.join(roomCode);
+      socketMap.set(socket.id, { roomCode, playerId });
+
+      console.log(`[Socket] ${player.name} rejoined room ${roomCode}`);
+
+      // Send full state
+      socket.emit("server:state-sync", {
+        gameState: getClientGameState(room, playerId),
+      });
+
+      // Re-send round info if game is active
+      if (room.status === "playing" && room.currentCard) {
+        socket.emit("server:round-start", {
+          slogan: room.currentCard.slogan,
+          difficulty: room.currentCard.difficulty,
+          roundNumber: room.roundNumber,
+          timeoutSeconds: room.settings.roundTimeSeconds,
+        });
+      }
+    });
+
     socket.on("client:start-game", ({ roomCode }) => {
       const mapping = socketMap.get(socket.id);
       if (!mapping) return;
@@ -111,11 +154,9 @@ export function setupSocketHandlers(
         return;
       }
 
-      // Start first round
       const updatedRoom = startNextRound(roomCode);
       if (!updatedRoom) return;
 
-      // Send game-started to all players
       for (const player of updatedRoom.players) {
         const sockets = getSocketsForPlayer(player.id);
         for (const sid of sockets) {
@@ -141,12 +182,10 @@ export function setupSocketHandlers(
         return;
       }
 
-      // Notify all players that someone answered
       io.to(roomCode).emit("server:answer-received", {
         playerId: mapping.playerId,
       });
 
-      // If all answered, reveal immediately
       if (result.allAnswered) {
         doReveal(io, roomCode);
       }
@@ -168,8 +207,32 @@ export function setupSocketHandlers(
       }
     });
 
-    socket.on("client:request-sync", ({ roomCode }) => {
-      const mapping = socketMap.get(socket.id);
+    socket.on("client:request-sync", ({ roomCode, playerId }) => {
+      let mapping = socketMap.get(socket.id);
+
+      // If no mapping but playerId provided, try to rejoin
+      if (!mapping && playerId) {
+        const room = getRoom(roomCode);
+        if (room) {
+          const player = room.players.find((p) => p.id === playerId);
+          if (player) {
+            // Cancel disconnect timer
+            const timerKey = `${roomCode}:${playerId}`;
+            const timer = disconnectTimers.get(timerKey);
+            if (timer) {
+              clearTimeout(timer);
+              disconnectTimers.delete(timerKey);
+            }
+
+            player.connected = true;
+            socket.join(roomCode);
+            socketMap.set(socket.id, { roomCode, playerId });
+            mapping = { roomCode, playerId };
+            console.log(`[Socket] Auto-rejoined ${player.name} via request-sync`);
+          }
+        }
+      }
+
       if (!mapping) return;
 
       const room = getRoom(roomCode);
@@ -179,7 +242,7 @@ export function setupSocketHandlers(
         gameState: getClientGameState(room, mapping.playerId),
       });
 
-      // If game is in playing state, also re-send round info
+      // Re-send round info if game is active
       if (room.status === "playing" && room.currentCard) {
         socket.emit("server:round-start", {
           slogan: room.currentCard.slogan,
@@ -191,12 +254,72 @@ export function setupSocketHandlers(
     });
 
     socket.on("client:leave-room", () => {
-      handleDisconnect(socket, io);
+      // Explicit leave — remove immediately, no grace period
+      const mapping = socketMap.get(socket.id);
+      if (!mapping) return;
+
+      const { roomCode, playerId } = mapping;
+      const room = removePlayer(roomCode, playerId);
+
+      if (room) {
+        io.to(roomCode).emit("server:player-left", {
+          playerId,
+          players: room.players,
+        });
+      }
+
+      socket.leave(roomCode);
+      socketMap.delete(socket.id);
     });
 
     socket.on("disconnect", () => {
       console.log(`[Socket] Disconnected: ${socket.id}`);
-      handleDisconnect(socket, io);
+      const mapping = socketMap.get(socket.id);
+      if (!mapping) return;
+
+      const { roomCode, playerId } = mapping;
+      const room = getRoom(roomCode);
+      socketMap.delete(socket.id);
+
+      if (!room) return;
+
+      // During a game: use grace period (player might reconnect)
+      if (room.status !== "waiting") {
+        const player = room.players.find((p) => p.id === playerId);
+        if (player) {
+          player.connected = false;
+          console.log(`[Socket] ${player.name} disconnected, grace period ${DISCONNECT_GRACE_MS / 1000}s`);
+        }
+
+        const timerKey = `${roomCode}:${playerId}`;
+        // Clear any existing timer
+        const existing = disconnectTimers.get(timerKey);
+        if (existing) clearTimeout(existing);
+
+        disconnectTimers.set(
+          timerKey,
+          setTimeout(() => {
+            disconnectTimers.delete(timerKey);
+            console.log(`[Socket] Grace period expired, removing player from ${roomCode}`);
+            const currentRoom = removePlayer(roomCode, playerId);
+            if (currentRoom) {
+              io.to(roomCode).emit("server:player-left", {
+                playerId,
+                players: currentRoom.players,
+              });
+            }
+          }, DISCONNECT_GRACE_MS)
+        );
+      } else {
+        // In lobby: remove immediately
+        const updatedRoom = removePlayer(roomCode, playerId);
+        if (updatedRoom) {
+          io.to(roomCode).emit("server:player-left", {
+            playerId,
+            players: updatedRoom.players,
+          });
+        }
+      }
     });
   });
 }
@@ -215,7 +338,6 @@ function emitRoundStart(
     timeoutSeconds: room.settings.roundTimeSeconds,
   });
 
-  // Start countdown timer
   if (room.roundTimer) clearTimeout(room.roundTimer);
   room.roundTimer = setTimeout(() => {
     doReveal(io, roomCode);
@@ -236,27 +358,6 @@ function doReveal(
     playerResults: results,
     players: room.players,
   });
-}
-
-function handleDisconnect(
-  socket: TypedSocket,
-  io: Server<ClientToServerEvents, ServerToClientEvents>
-) {
-  const mapping = socketMap.get(socket.id);
-  if (!mapping) return;
-
-  const { roomCode, playerId } = mapping;
-  const room = removePlayer(roomCode, playerId);
-
-  if (room) {
-    io.to(roomCode).emit("server:player-left", {
-      playerId,
-      players: room.players,
-    });
-  }
-
-  socket.leave(roomCode);
-  socketMap.delete(socket.id);
 }
 
 function getSocketsForPlayer(playerId: string): string[] {
