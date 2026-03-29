@@ -1,65 +1,206 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useSocket } from "../hooks/useSocket";
+
+export default function HomePage() {
+  const router = useRouter();
+  const socket = useSocket();
+  const [playerName, setPlayerName] = useState("");
+  const [roomCode, setRoomCode] = useState("");
+  const [mode, setMode] = useState<"menu" | "create" | "join">("menu");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSolo = useCallback(() => {
+    if (!playerName.trim()) {
+      setError("Bitte gib deinen Namen ein");
+      return;
+    }
+    setLoading(true);
+    setError("");
+
+    socket.once("server:room-created", ({ roomCode, player }) => {
+      sessionStorage.setItem("playerId", player.id);
+      sessionStorage.setItem("playerName", playerName);
+      sessionStorage.setItem("roomCode", roomCode);
+      router.push(`/game/${roomCode}`);
+    });
+
+    socket.once("server:error", ({ message }) => {
+      setError(message);
+      setLoading(false);
+    });
+
+    socket.emit("client:create-solo", { playerName: playerName.trim() });
+  }, [playerName, socket, router]);
+
+  const handleCreate = useCallback(() => {
+    if (!playerName.trim()) {
+      setError("Bitte gib deinen Namen ein");
+      return;
+    }
+    setLoading(true);
+    setError("");
+
+    socket.once("server:room-created", ({ roomCode, player }) => {
+      sessionStorage.setItem("playerId", player.id);
+      sessionStorage.setItem("playerName", playerName);
+      sessionStorage.setItem("roomCode", roomCode);
+      router.push(`/lobby/${roomCode}`);
+    });
+
+    socket.once("server:error", ({ message }) => {
+      setError(message);
+      setLoading(false);
+    });
+
+    socket.emit("client:create-room", { playerName: playerName.trim() });
+  }, [playerName, socket, router]);
+
+  const handleJoin = useCallback(() => {
+    if (!playerName.trim()) {
+      setError("Bitte gib deinen Namen ein");
+      return;
+    }
+    if (!roomCode.trim()) {
+      setError("Bitte gib den Raum-Code ein");
+      return;
+    }
+    setLoading(true);
+    setError("");
+
+    socket.once("server:state-sync", ({ gameState }) => {
+      const me = gameState.players.find((p) => p.name === playerName.trim());
+      if (me) {
+        sessionStorage.setItem("playerId", me.id);
+      }
+      sessionStorage.setItem("playerName", playerName);
+      sessionStorage.setItem("roomCode", roomCode.toUpperCase());
+      router.push(`/lobby/${roomCode.toUpperCase()}`);
+    });
+
+    socket.once("server:error", ({ message }) => {
+      setError(message);
+      setLoading(false);
+    });
+
+    socket.emit("client:join-room", {
+      roomCode: roomCode.trim().toUpperCase(),
+      playerName: playerName.trim(),
+    });
+  }, [playerName, roomCode, socket, router]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="flex-1 flex items-center justify-center bg-gradient-to-br from-amber-50 to-orange-100 p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-5xl font-bold text-orange-600 mb-2">
+            Sloganster
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-gray-600 text-lg">
+            Erkennst du die Werbung?
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        <div className="bg-white rounded-2xl shadow-xl p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Dein Name
+            </label>
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="Name eingeben..."
+              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-lg text-gray-900"
+              maxLength={20}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
+
+          {mode === "menu" && (
+            <div className="space-y-3">
+              <button
+                onClick={handleSolo}
+                disabled={loading}
+                className="w-full py-4 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-bold text-lg rounded-xl transition-colors"
+              >
+                {loading ? "Starte..." : "Solo spielen"}
+              </button>
+              <button
+                onClick={() => setMode("create")}
+                className="w-full py-4 bg-white border-2 border-orange-500 text-orange-600 hover:bg-orange-50 font-bold text-lg rounded-xl transition-colors"
+              >
+                Multiplayer erstellen
+              </button>
+              <button
+                onClick={() => setMode("join")}
+                className="w-full py-3 text-orange-500 hover:text-orange-700 font-medium transition-colors"
+              >
+                Spiel beitreten
+              </button>
+            </div>
+          )}
+
+          {mode === "create" && (
+            <div className="space-y-3">
+              <button
+                onClick={handleCreate}
+                disabled={loading}
+                className="w-full py-4 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-bold text-lg rounded-xl transition-colors"
+              >
+                {loading ? "Erstelle Raum..." : "Raum erstellen"}
+              </button>
+              <button
+                onClick={() => { setMode("menu"); setError(""); }}
+                className="w-full py-2 text-gray-500 hover:text-gray-700"
+              >
+                Zurück
+              </button>
+            </div>
+          )}
+
+          {mode === "join" && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Raum-Code
+                </label>
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value.toUpperCase().slice(0, 4))}
+                  placeholder="z.B. AB3K"
+                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-2xl text-center font-mono tracking-widest text-gray-900"
+                  maxLength={4}
+                />
+              </div>
+              <button
+                onClick={handleJoin}
+                disabled={loading}
+                className="w-full py-4 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-bold text-lg rounded-xl transition-colors"
+              >
+                {loading ? "Trete bei..." : "Beitreten"}
+              </button>
+              <button
+                onClick={() => { setMode("menu"); setError(""); }}
+                className="w-full py-2 text-gray-500 hover:text-gray-700"
+              >
+                Zurück
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-red-500 text-center text-sm">{error}</p>
+          )}
         </div>
-      </main>
-    </div>
+
+        <p className="text-center text-gray-400 text-sm mt-6">
+          Rate berühmte Werbeslogans — welche Marke und aus welchem Jahr?
+        </p>
+      </div>
+    </main>
   );
 }
