@@ -11,6 +11,7 @@ import {
   getClientGameState,
 } from "./gameManager";
 import { getRoom } from "./roomStore";
+import { addHighscore, getHighscores } from "./highscoreStore";
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
@@ -199,6 +200,20 @@ export function setupSocketHandlers(
       if (!updatedRoom) return;
 
       if (updatedRoom.status === "finished") {
+        // Save highscores for all players
+        const maxScore = updatedRoom.settings.maxRounds * 4;
+        for (const player of updatedRoom.players) {
+          addHighscore({
+            playerName: player.name,
+            score: player.score,
+            maxScore,
+            rounds: updatedRoom.settings.maxRounds,
+            isSolo: updatedRoom.isSinglePlayer,
+            playerCount: updatedRoom.players.length,
+            date: new Date().toISOString(),
+          });
+        }
+
         io.to(roomCode).emit("server:game-over", {
           players: updatedRoom.players,
         });
@@ -251,6 +266,10 @@ export function setupSocketHandlers(
           timeoutSeconds: room.settings.roundTimeSeconds,
         });
       }
+    });
+
+    socket.on("client:get-highscores", () => {
+      socket.emit("server:highscores", { highscores: getHighscores(10) });
     });
 
     socket.on("client:leave-room", () => {

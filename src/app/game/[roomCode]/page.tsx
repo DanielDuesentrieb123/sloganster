@@ -8,6 +8,16 @@ import { Slogan } from "../../../types/slogan";
 import YearSlider from "../../../components/game/YearSlider";
 import YouTubeEmbed from "../../../components/game/YouTubeEmbed";
 
+interface HighscoreEntry {
+  playerName: string;
+  score: number;
+  maxScore: number;
+  rounds: number;
+  isSolo: boolean;
+  playerCount: number;
+  date: string;
+}
+
 type Phase = "waiting" | "guessing" | "revealing" | "finished";
 
 export default function GamePage() {
@@ -33,6 +43,9 @@ export default function GamePage() {
   const [answeredPlayerIds, setAnsweredPlayerIds] = useState<Set<string>>(
     new Set()
   );
+
+  // Highscores
+  const [highscores, setHighscores] = useState<HighscoreEntry[]>([]);
 
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -134,6 +147,14 @@ export default function GamePage() {
       setGameState((prev) =>
         prev ? { ...prev, players: data.players, status: "finished" } : prev
       );
+      // Fetch highscores after game ends
+      setTimeout(() => {
+        socket.emit("client:get-highscores");
+      }, 200);
+    };
+
+    const onHighscores = (data: { highscores: HighscoreEntry[] }) => {
+      setHighscores(data.highscores);
     };
 
     const onPlayerJoined = (data: { players: ClientGameState["players"] }) => {
@@ -150,6 +171,7 @@ export default function GamePage() {
     socket.on("server:answer-received", onAnswerReceived);
     socket.on("server:round-reveal", onRoundReveal);
     socket.on("server:game-over", onGameOver);
+    socket.on("server:highscores", onHighscores);
     socket.on("server:player-joined", onPlayerJoined);
     socket.on("server:player-left", onPlayerLeft);
 
@@ -160,6 +182,7 @@ export default function GamePage() {
       socket.off("server:answer-received", onAnswerReceived);
       socket.off("server:round-reveal", onRoundReveal);
       socket.off("server:game-over", onGameOver);
+      socket.off("server:highscores", onHighscores);
       socket.off("server:player-joined", onPlayerJoined);
       socket.off("server:player-left", onPlayerLeft);
       if (countdownRef.current) clearInterval(countdownRef.current);
@@ -230,6 +253,45 @@ export default function GamePage() {
                 Max. erreichbar: {maxRounds * 4} Punkte
               </p>
             </div>
+
+            {highscores.length > 0 && (
+              <div className="text-left">
+                <h2 className="text-sm font-medium text-gray-500 mb-2 flex items-center gap-1">
+                  🏆 Top Highscores
+                </h2>
+                <div className="space-y-1">
+                  {highscores.slice(0, 5).map((entry, i) => {
+                    const isMe = players.some(
+                      (p) =>
+                        p.name === entry.playerName &&
+                        p.score === entry.score
+                    );
+                    return (
+                      <div
+                        key={`${entry.playerName}-${entry.date}-${i}`}
+                        className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                          isMe
+                            ? "bg-orange-50 border border-orange-200"
+                            : "bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-400 w-5 text-right text-xs">
+                            {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
+                          </span>
+                          <span className="font-medium text-gray-700">
+                            {entry.playerName}
+                          </span>
+                        </div>
+                        <span className="font-bold text-orange-600">
+                          {entry.score}/{entry.maxScore}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <button
               onClick={() => {

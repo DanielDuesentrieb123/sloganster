@@ -1,8 +1,18 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSocket } from "../hooks/useSocket";
+
+interface HighscoreEntry {
+  playerName: string;
+  score: number;
+  maxScore: number;
+  rounds: number;
+  isSolo: boolean;
+  playerCount: number;
+  date: string;
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -12,6 +22,24 @@ export default function HomePage() {
   const [mode, setMode] = useState<"menu" | "create" | "join">("menu");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [highscores, setHighscores] = useState<HighscoreEntry[]>([]);
+
+  useEffect(() => {
+    const onHighscores = (data: { highscores: HighscoreEntry[] }) => {
+      setHighscores(data.highscores);
+    };
+    socket.on("server:highscores", onHighscores);
+
+    // Request highscores on mount
+    const timer = setTimeout(() => {
+      socket.emit("client:get-highscores");
+    }, 150);
+
+    return () => {
+      clearTimeout(timer);
+      socket.off("server:highscores", onHighscores);
+    };
+  }, [socket]);
 
   const handleSolo = useCallback(() => {
     if (!playerName.trim()) {
@@ -196,6 +224,52 @@ export default function HomePage() {
             <p className="text-red-500 text-center text-sm">{error}</p>
           )}
         </div>
+
+        {highscores.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-xl p-6 mt-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+              🏆 Highscores
+            </h2>
+            <div className="space-y-2">
+              {highscores.map((entry, i) => (
+                <div
+                  key={`${entry.playerName}-${entry.date}-${i}`}
+                  className={`flex items-center justify-between px-3 py-2 rounded-lg ${
+                    i === 0
+                      ? "bg-yellow-50 border border-yellow-200"
+                      : i === 1
+                        ? "bg-gray-50 border border-gray-200"
+                        : i === 2
+                          ? "bg-orange-50 border border-orange-100"
+                          : "bg-gray-50"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-gray-400 w-5 text-right">
+                      {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
+                    </span>
+                    <div>
+                      <span className="font-medium text-gray-800 text-sm">
+                        {entry.playerName}
+                      </span>
+                      <span className="text-xs text-gray-400 ml-2">
+                        {entry.isSolo ? "Solo" : `${entry.playerCount} Spieler`}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-orange-600 text-sm">
+                      {entry.score}/{entry.maxScore}
+                    </span>
+                    <span className="text-xs text-gray-400 ml-1">
+                      ({Math.round((entry.score / entry.maxScore) * 100)}%)
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <p className="text-center text-gray-400 text-sm mt-6">
           Rate berühmte Werbeslogans — welche Marke und aus welchem Jahr?

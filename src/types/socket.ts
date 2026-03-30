@@ -1,5 +1,6 @@
 import { ClientGameState, GameSettings, Player, PlayerResult } from "./game";
 import { Slogan } from "./slogan";
+import { HighscoreEntry } from "../server/highscoreStore";
 
 export interface ClientToServerEvents {
   "client:create-room": (data: { playerName: string }) => void;
@@ -15,6 +16,7 @@ export interface ClientToServerEvents {
   "client:leave-room": (data: { roomCode: string }) => void;
   "client:request-sync": (data: { roomCode: string; playerId?: string }) => void;
   "client:rejoin-room": (data: { roomCode: string; playerId: string }) => void;
+  "client:get-highscores": () => void;
 }
 
 export interface ServerToClientEvents {
@@ -49,4 +51,5 @@ export interface ServerToClientEvents {
   "server:error": (data: { message: string; code: string }) => void;
   "server:state-sync": (data: { gameState: ClientGameState }) => void;
   "server:countdown": (data: { secondsLeft: number }) => void;
+  "server:highscores": (data: { highscores: HighscoreEntry[] }) => void;
 }
