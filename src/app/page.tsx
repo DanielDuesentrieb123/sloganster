@@ -23,12 +23,18 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [highscores, setHighscores] = useState<HighscoreEntry[]>([]);
+  const [showStats, setShowStats] = useState(false);
+  const [gamesPlayed, setGamesPlayed] = useState(0);
 
   useEffect(() => {
     const onHighscores = (data: { highscores: HighscoreEntry[] }) => {
       setHighscores(data.highscores);
     };
+    const onStats = (data: { gamesPlayed: number }) => {
+      setGamesPlayed(data.gamesPlayed);
+    };
     socket.on("server:highscores", onHighscores);
+    socket.on("server:stats", onStats);
 
     // Request highscores on mount
     const timer = setTimeout(() => {
@@ -38,7 +44,20 @@ export default function HomePage() {
     return () => {
       clearTimeout(timer);
       socket.off("server:highscores", onHighscores);
+      socket.off("server:stats", onStats);
     };
+  }, [socket]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "S") {
+        e.preventDefault();
+        socket.emit("client:get-stats");
+        setShowStats((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [socket]);
 
   const handleSolo = useCallback(() => {
@@ -275,6 +294,23 @@ export default function HomePage() {
           Rate berühmte Werbeslogans — welche Marke und aus welchem Jahr?
         </p>
       </div>
+
+      {showStats && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          onClick={() => setShowStats(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs text-gray-400 uppercase tracking-widest mb-2">Admin Stats</p>
+            <p className="text-6xl font-bold text-orange-600 mb-1">{gamesPlayed}</p>
+            <p className="text-gray-500 text-lg">Spiele gespielt</p>
+            <p className="text-xs text-gray-300 mt-4">Ctrl+Shift+S zum Schließen</p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

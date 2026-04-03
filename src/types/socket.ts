@@ -17,6 +17,7 @@ export interface ClientToServerEvents {
   "client:request-sync": (data: { roomCode: string; playerId?: string }) => void;
   "client:rejoin-room": (data: { roomCode: string; playerId: string }) => void;
   "client:get-highscores": () => void;
+  "client:get-stats": () => void;
 }
 
 export interface ServerToClientEvents {
@@ -52,4 +53,5 @@ export interface ServerToClientEvents {
   "server:state-sync": (data: { gameState: ClientGameState }) => void;
   "server:countdown": (data: { secondsLeft: number }) => void;
   "server:highscores": (data: { highscores: HighscoreEntry[] }) => void;
+  "server:stats": (data: { gamesPlayed: number }) => void;
 }

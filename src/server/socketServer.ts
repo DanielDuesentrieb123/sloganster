@@ -11,7 +11,7 @@ import {
   getClientGameState,
 } from "./gameManager";
 import { getRoom } from "./roomStore";
-import { addHighscore, getHighscores } from "./highscoreStore";
+import { addHighscore, getHighscores, incrementGamesPlayed, getGamesPlayed } from "./highscoreStore";
 
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
@@ -214,12 +214,18 @@ export function setupSocketHandlers(
           });
         }
 
+        incrementGamesPlayed();
+
         io.to(roomCode).emit("server:game-over", {
           players: updatedRoom.players,
         });
       } else {
         emitRoundStart(io, roomCode);
       }
+    });
+
+    socket.on("client:get-stats", () => {
+      socket.emit("server:stats", { gamesPlayed: getGamesPlayed() });
     });
 
     socket.on("client:request-sync", ({ roomCode, playerId }) => {

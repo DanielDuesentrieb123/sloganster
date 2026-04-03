@@ -13,8 +13,10 @@ export interface HighscoreEntry {
 
 const MAX_ENTRIES = 50;
 const DATA_FILE = path.join(process.cwd(), "highscores.json");
+const STATS_FILE = path.join(process.cwd(), "stats.json");
 
 let highscores: HighscoreEntry[] = [];
+let gamesPlayed = 0;
 
 // Load from file on startup
 function loadFromFile(): void {
@@ -38,8 +40,30 @@ function saveToFile(): void {
   }
 }
 
+function loadStats(): void {
+  try {
+    if (fs.existsSync(STATS_FILE)) {
+      const data = fs.readFileSync(STATS_FILE, "utf-8");
+      const stats = JSON.parse(data);
+      gamesPlayed = stats.gamesPlayed || 0;
+      console.log(`[Stats] ${gamesPlayed} games played total`);
+    }
+  } catch (err) {
+    console.error("[Stats] Failed to load:", err);
+  }
+}
+
+function saveStats(): void {
+  try {
+    fs.writeFileSync(STATS_FILE, JSON.stringify({ gamesPlayed }), "utf-8");
+  } catch (err) {
+    console.error("[Stats] Failed to save:", err);
+  }
+}
+
 // Initialize
 loadFromFile();
+loadStats();
 
 export function addHighscore(entry: HighscoreEntry): void {
   highscores.push(entry);
@@ -59,4 +83,13 @@ export function addHighscore(entry: HighscoreEntry): void {
 
 export function getHighscores(limit: number = 10): HighscoreEntry[] {
   return highscores.slice(0, limit);
+}
+
+export function incrementGamesPlayed(): void {
+  gamesPlayed++;
+  saveStats();
+}
+
+export function getGamesPlayed(): number {
+  return gamesPlayed;
 }
